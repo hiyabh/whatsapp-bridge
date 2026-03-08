@@ -235,9 +235,11 @@ async function connectWhatsApp(): Promise<void> {
         const data = (await response.json()) as { reply: string };
 
         if (data.reply) {
+          // Always reply to phone number JID (not LID which doesn't deliver)
+          const replyJid = `${phone}@s.whatsapp.net`;
           // Anti-ban: wait 2-4 seconds before replying
           await new Promise((r) => setTimeout(r, addJitter(3000)));
-          await queueMessage(jid, data.reply);
+          await queueMessage(replyJid, data.reply);
           console.log(`[REPLY] To ${phone}: ${data.reply.substring(0, 100)}`);
         }
       } catch (err) {
