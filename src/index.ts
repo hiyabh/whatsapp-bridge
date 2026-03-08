@@ -113,8 +113,62 @@ function getMediaType(
   return { type: null, mime: "" };
 }
 
+// --- Session persistence via myBrain API ---
+
+async function restoreSessionFromAPI(): Promise<void> {
+  if (!MYBRAIN_URL || !BRIDGE_SECRET) return;
+  try {
+    console.log("[AUTH] Fetching session backup from DB...");
+    const response = await fetch(`${MYBRAIN_URL}/whatsapp/session-backup`, {
+      headers: { "X-Bridge-Secret": BRIDGE_SECRET },
+    });
+    if (!response.ok) {
+      console.log("[AUTH] No session backup found, will show QR code");
+      return;
+    }
+    const files = (await response.json()) as Record<string, string>;
+    const count = Object.keys(files).length;
+    if (count === 0) {
+      console.log("[AUTH] Session backup empty, will show QR code");
+      return;
+    }
+    if (!fs.existsSync(AUTH_STORE)) fs.mkdirSync(AUTH_STORE, { recursive: true });
+    for (const [filename, base64] of Object.entries(files)) {
+      fs.writeFileSync(`${AUTH_STORE}/${filename}`, Buffer.from(base64, "base64"));
+    }
+    console.log(`[AUTH] Restored ${count} session files from DB`);
+  } catch (err) {
+    console.log("[AUTH] Could not restore session (will start fresh):", (err as Error).message);
+  }
+}
+
+async function backupSessionToAPI(): Promise<void> {
+  if (!MYBRAIN_URL || !BRIDGE_SECRET) return;
+  try {
+    if (!fs.existsSync(AUTH_STORE)) return;
+    const files = fs.readdirSync(AUTH_STORE);
+    if (files.length === 0) return;
+    const backup: Record<string, string> = {};
+    for (const file of files) {
+      backup[file] = fs.readFileSync(`${AUTH_STORE}/${file}`).toString("base64");
+    }
+    await fetch(`${MYBRAIN_URL}/whatsapp/session-backup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Bridge-Secret": BRIDGE_SECRET },
+      body: JSON.stringify(backup),
+    });
+    console.log(`[AUTH] Backed up ${files.length} session files to DB`);
+  } catch (err) {
+    console.error("[AUTH] Failed to backup session:", (err as Error).message);
+  }
+}
+
+// Backup every 5 minutes in case of dirty shutdown
+setInterval(backupSessionToAPI, 5 * 60 * 1000);
+
 // --- WhatsApp Connection ---
 async function connectWhatsApp(): Promise<void> {
+  await restoreSessionFromAPI();
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_STORE);
   const { version } = await fetchLatestBaileysVersion();
   console.log(`[INIT] Using WA version: ${version.join(".")}`);
@@ -128,8 +182,11 @@ async function connectWhatsApp(): Promise<void> {
     syncFullHistory: false,
   });
 
-  // Save credentials on update
-  sock.ev.on("creds.update", saveCreds);
+  // Save credentials on update and back them up to DB
+  sock.ev.on("creds.update", async () => {
+    await saveCreds();
+    await backupSessionToAPI();
+  });
 
   // Connection state management
   sock.ev.on("connection.update", (update) => {
