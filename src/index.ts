@@ -21,29 +21,6 @@ const PORT = parseInt(process.env.PORT || "3000");
 // Auth store path
 const AUTH_STORE = process.env.AUTH_STORE_PATH || "./auth_store";
 
-// Clean stale session files on startup - keep only creds.json
-// so Baileys renegotiates fresh Signal sessions each deploy.
-function cleanStaleSessionFiles(): void {
-  if (!fs.existsSync(`${AUTH_STORE}/creds.json`)) {
-    console.log("[AUTH] No creds.json found - will show QR code");
-    return;
-  }
-  console.log("[AUTH] Cleaning stale session files, keeping creds.json...");
-  const files = fs.readdirSync(AUTH_STORE);
-  let removed = 0;
-  for (const file of files) {
-    if (file === "creds.json") continue;
-    // Keep app-state-sync-key files (encryption keys, don't change)
-    if (file.startsWith("app-state-sync-key-")) continue;
-    // Remove session, pre-key, and app-state-sync-version files (become stale)
-    fs.unlinkSync(`${AUTH_STORE}/${file}`);
-    removed++;
-  }
-  console.log(`[AUTH] Removed ${removed} stale files, keeping creds.json + sync keys`);
-}
-
-cleanStaleSessionFiles();
-
 const logger = pino({ level: "warn" });
 
 let sock: WASocket | null = null;
