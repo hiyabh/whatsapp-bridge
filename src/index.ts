@@ -190,9 +190,12 @@ async function connectWhatsApp(): Promise<void> {
 
   // Handle incoming messages
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
+    console.log(`[RAW] upsert type=${type} count=${messages.length}`);
     if (type !== "notify") return;
 
     for (const msg of messages) {
+      const msgKeys = msg.message ? Object.keys(msg.message) : [];
+      console.log(`[RAW] jid=${msg.key.remoteJid} fromMe=${msg.key.fromMe} keys=${msgKeys.join(",")}`);
       if (!msg.message) continue;
 
       // Skip messages sent by this bot (prevent infinite loop)
