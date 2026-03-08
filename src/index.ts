@@ -204,20 +204,14 @@ async function connectWhatsApp(): Promise<void> {
       // Only handle DMs (not groups)
       if (jid.endsWith("@g.us") || jid.endsWith("@newsletter")) continue;
 
-      // For self-chat (messages to yourself), remoteJid is your own number
-      // and fromMe is true. We allow these since the bot runs on the user's number.
-      // For messages from OTHER people, fromMe would be false - skip those.
-      if (!msg.key.fromMe) {
-        // Message from someone else to us - extract their phone to check auth
-        const senderPhone = jid.replace("@s.whatsapp.net", "").replace("@lid", "");
-        if (MY_PHONE && senderPhone !== MY_PHONE) {
-          console.log(`[SKIP] Unauthorized: ${senderPhone}`);
-          continue;
-        }
-      }
+      // Only respond in self-chat ("Message Yourself").
+      // The bot runs on the user's own number as a linked device,
+      // so it sees ALL messages. We only want to process messages
+      // in the self-chat where remoteJid matches MY_PHONE.
+      const chatPhone = jid.replace("@s.whatsapp.net", "").replace("@lid", "");
+      if (MY_PHONE && chatPhone !== MY_PHONE) continue;
 
-      // Use MY_PHONE as the phone identifier for the API
-      const phone = MY_PHONE || jid.replace("@s.whatsapp.net", "").replace("@lid", "");
+      const phone = MY_PHONE || chatPhone;
 
       const text = extractText(msg.message);
       if (!text) continue;
