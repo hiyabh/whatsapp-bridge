@@ -242,7 +242,16 @@ async function connectWhatsApp(): Promise<void> {
         let mediaData: string | undefined;
         if (mediaType && sock) {
           try {
-            const buffer = await downloadMediaMessage(msg, "buffer", {}, { logger, reuploadRequest: sock.updateMediaMessage });
+            console.log(`[MEDIA] Starting download for ${mediaType}...`);
+            const downloadPromise = downloadMediaMessage(
+              msg, "buffer", {},
+              { logger, reuploadRequest: sock.updateMediaMessage }
+            );
+            const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("Media download timeout after 30s")), 30000)
+            );
+            const buffer = await Promise.race([downloadPromise, timeoutPromise]);
+            console.log(`[MEDIA] Downloaded ${(buffer as Buffer).length} bytes`);
             mediaData = (buffer as Buffer).toString("base64");
           } catch (mediaErr) {
             console.error("[MEDIA ERROR]", mediaErr);
@@ -250,6 +259,7 @@ async function connectWhatsApp(): Promise<void> {
         }
 
         // Forward to myBrain Python API
+        console.log(`[API] Sending to myBrain (hasMedia=${!!mediaData})...`);
         const response = await fetch(`${MYBRAIN_URL}/whatsapp/incoming`, {
           method: "POST",
           headers: {
