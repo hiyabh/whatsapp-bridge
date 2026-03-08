@@ -14,9 +14,8 @@ const BRIDGE_SECRET = process.env.BRIDGE_SECRET || "";
 const MY_PHONE = process.env.MY_PHONE || "";
 const PORT = parseInt(process.env.PORT || "3000");
 
-// Auth store path - use /data for Railway Volume, fallback to local
-const AUTH_STORE =
-  process.env.AUTH_STORE_PATH || "/data/auth_store";
+// Auth store path - local directory (survives restarts, not deploys)
+const AUTH_STORE = process.env.AUTH_STORE_PATH || "./auth_store";
 
 const logger = pino({ level: "warn" });
 
