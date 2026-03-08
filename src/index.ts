@@ -20,26 +20,28 @@ const PORT = parseInt(process.env.PORT || "3000");
 // Auth store path
 const AUTH_STORE = process.env.AUTH_STORE_PATH || "./auth_store";
 
-// Restore auth from env var if auth_store doesn't exist yet
-function restoreAuthFromEnv(): void {
-  if (fs.existsSync(`${AUTH_STORE}/creds.json`)) {
-    console.log("[AUTH] Using existing auth_store");
+// Clean stale session files on startup - keep only creds.json
+// so Baileys renegotiates fresh Signal sessions each deploy.
+function cleanStaleSessionFiles(): void {
+  if (!fs.existsSync(`${AUTH_STORE}/creds.json`)) {
+    console.log("[AUTH] No creds.json found - will show QR code");
     return;
   }
-  const authB64 = process.env.WA_AUTH_STATE;
-  if (!authB64) {
-    console.log("[AUTH] No existing session - will show QR code");
-    return;
+  console.log("[AUTH] Cleaning stale session files, keeping creds.json...");
+  const files = fs.readdirSync(AUTH_STORE);
+  let removed = 0;
+  for (const file of files) {
+    if (file === "creds.json") continue;
+    // Keep app-state-sync-key files (encryption keys, don't change)
+    if (file.startsWith("app-state-sync-key-")) continue;
+    // Remove session, pre-key, and app-state-sync-version files (become stale)
+    fs.unlinkSync(`${AUTH_STORE}/${file}`);
+    removed++;
   }
-  console.log("[AUTH] Restoring session from WA_AUTH_STATE env var...");
-  fs.writeFileSync("/tmp/auth.tar.gz.b64", authB64);
-  execSync("base64 -d /tmp/auth.tar.gz.b64 > /tmp/auth.tar.gz");
-  execSync(`mkdir -p ${AUTH_STORE}`);
-  execSync(`tar xzf /tmp/auth.tar.gz -C . --no-same-owner`);
-  console.log("[AUTH] Session restored!");
+  console.log(`[AUTH] Removed ${removed} stale files, keeping creds.json + sync keys`);
 }
 
-restoreAuthFromEnv();
+cleanStaleSessionFiles();
 
 const logger = pino({ level: "warn" });
 
@@ -79,9 +81,7 @@ async function processQueue(): Promise<void> {
     }
 
     try {
-      console.log(`[QUEUE] Sending to ${item.jid}: ${item.text.substring(0, 80)}`);
       const sent = await sock.sendMessage(item.jid, { text: item.text });
-      console.log(`[SENT] Result:`, JSON.stringify(sent?.key));
       // Track the sent message ID so we don't process our own replies
       if (sent?.key?.id) {
         botSentIds.add(sent.key.id);
