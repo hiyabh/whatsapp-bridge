@@ -2,6 +2,7 @@ import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
   WASocket,
   proto,
 } from "@whiskeysockets/baileys";
@@ -119,8 +120,20 @@ function extractText(
   return (
     message.conversation ||
     message.extendedTextMessage?.text ||
+    message.imageMessage?.caption ||
+    message.videoMessage?.caption ||
     null
   );
+}
+
+// --- Detect media type ---
+function getMediaType(
+  message: proto.IMessage | null | undefined
+): { type: "image" | "audio" | null; mime: string } {
+  if (!message) return { type: null, mime: "" };
+  if (message.imageMessage) return { type: "image", mime: message.imageMessage.mimetype || "image/jpeg" };
+  if (message.audioMessage) return { type: "audio", mime: message.audioMessage.mimetype || "audio/ogg" };
+  return { type: null, mime: "" };
 }
 
 // --- WhatsApp Connection ---
@@ -213,12 +226,26 @@ async function connectWhatsApp(): Promise<void> {
 
       const phone = MY_PHONE || chatPhone;
 
-      const text = extractText(msg.message);
-      if (!text) continue;
+      const text = extractText(msg.message) || "";
+      const { type: mediaType, mime: mediaMime } = getMediaType(msg.message);
 
-      console.log(`[MSG] From ${phone}: ${text.substring(0, 100)}`);
+      // Skip if no text and no media
+      if (!text && !mediaType) continue;
+
+      console.log(`[MSG] From ${phone}${mediaType ? ` [${mediaType}]` : ""}: ${text.substring(0, 80)}`);
 
       try {
+        // Download media if present
+        let mediaData: string | undefined;
+        if (mediaType && sock) {
+          try {
+            const buffer = await downloadMediaMessage(msg, "buffer", {}, { logger, reuploadRequest: sock.updateMediaMessage });
+            mediaData = (buffer as Buffer).toString("base64");
+          } catch (mediaErr) {
+            console.error("[MEDIA ERROR]", mediaErr);
+          }
+        }
+
         // Forward to myBrain Python API
         const response = await fetch(`${MYBRAIN_URL}/whatsapp/incoming`, {
           method: "POST",
@@ -230,6 +257,7 @@ async function connectWhatsApp(): Promise<void> {
             phone,
             text,
             message_id: msg.key.id || "",
+            ...(mediaType && { media_type: mediaType, media_data: mediaData, media_mime: mediaMime }),
           }),
         });
 
