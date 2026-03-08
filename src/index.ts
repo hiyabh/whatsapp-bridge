@@ -77,7 +77,9 @@ async function processQueue(): Promise<void> {
     }
 
     try {
+      console.log(`[QUEUE] Sending to ${item.jid}: ${item.text.substring(0, 80)}`);
       const sent = await sock.sendMessage(item.jid, { text: item.text });
+      console.log(`[SENT] Result:`, JSON.stringify(sent?.key));
       // Track the sent message ID so we don't process our own replies
       if (sent?.key?.id) {
         botSentIds.add(sent.key.id);
