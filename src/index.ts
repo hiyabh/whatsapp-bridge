@@ -56,6 +56,10 @@ interface QueueItem {
 const messageQueue: QueueItem[] = [];
 let processingQueue = false;
 
+// Track message IDs sent by the bot to avoid infinite loops
+const botSentIds = new Set<string>();
+const MAX_TRACKED_IDS = 500;
+
 function addJitter(baseMs: number): number {
   const jitter = baseMs * 0.3 * (Math.random() * 2 - 1);
   return Math.round(baseMs + jitter);
@@ -73,7 +77,16 @@ async function processQueue(): Promise<void> {
     }
 
     try {
-      await sock.sendMessage(item.jid, { text: item.text });
+      const sent = await sock.sendMessage(item.jid, { text: item.text });
+      // Track the sent message ID so we don't process our own replies
+      if (sent?.key?.id) {
+        botSentIds.add(sent.key.id);
+        // Cleanup old IDs to prevent memory leak
+        if (botSentIds.size > MAX_TRACKED_IDS) {
+          const first = botSentIds.values().next().value;
+          if (first) botSentIds.delete(first);
+        }
+      }
       item.resolve(true);
     } catch (err) {
       console.error("[SEND ERROR]", err);
@@ -163,9 +176,13 @@ async function connectWhatsApp(): Promise<void> {
     if (type !== "notify") return;
 
     for (const msg of messages) {
-      // Skip own messages
-      if (msg.key.fromMe) continue;
       if (!msg.message) continue;
+
+      // Skip messages sent by this bot (prevent infinite loop)
+      if (msg.key.id && botSentIds.has(msg.key.id)) {
+        botSentIds.delete(msg.key.id);
+        continue;
+      }
 
       const jid = msg.key.remoteJid;
       if (!jid) continue;
@@ -173,14 +190,20 @@ async function connectWhatsApp(): Promise<void> {
       // Only handle DMs (not groups)
       if (jid.endsWith("@g.us") || jid.endsWith("@newsletter")) continue;
 
-      // Extract sender phone number
-      const phone = jid.replace("@s.whatsapp.net", "").replace("@lid", "");
-
-      // Only respond to authorized user
-      if (MY_PHONE && phone !== MY_PHONE) {
-        console.log(`[SKIP] Unauthorized: ${phone}`);
-        continue;
+      // For self-chat (messages to yourself), remoteJid is your own number
+      // and fromMe is true. We allow these since the bot runs on the user's number.
+      // For messages from OTHER people, fromMe would be false - skip those.
+      if (!msg.key.fromMe) {
+        // Message from someone else to us - extract their phone to check auth
+        const senderPhone = jid.replace("@s.whatsapp.net", "").replace("@lid", "");
+        if (MY_PHONE && senderPhone !== MY_PHONE) {
+          console.log(`[SKIP] Unauthorized: ${senderPhone}`);
+          continue;
+        }
       }
+
+      // Use MY_PHONE as the phone identifier for the API
+      const phone = MY_PHONE || jid.replace("@s.whatsapp.net", "").replace("@lid", "");
 
       const text = extractText(msg.message);
       if (!text) continue;
