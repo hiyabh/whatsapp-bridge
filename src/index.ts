@@ -8,6 +8,8 @@ import makeWASocket, {
 import express from "express";
 import * as qrcode from "qrcode-terminal";
 import pino from "pino";
+import { execSync } from "child_process";
+import * as fs from "fs";
 
 // --- Configuration ---
 const MYBRAIN_URL = process.env.MYBRAIN_URL || "http://localhost:8080";
@@ -15,8 +17,29 @@ const BRIDGE_SECRET = process.env.BRIDGE_SECRET || "";
 const MY_PHONE = process.env.MY_PHONE || "";
 const PORT = parseInt(process.env.PORT || "3000");
 
-// Auth store path - local directory (survives restarts, not deploys)
+// Auth store path
 const AUTH_STORE = process.env.AUTH_STORE_PATH || "./auth_store";
+
+// Restore auth from env var if auth_store doesn't exist yet
+function restoreAuthFromEnv(): void {
+  if (fs.existsSync(`${AUTH_STORE}/creds.json`)) {
+    console.log("[AUTH] Using existing auth_store");
+    return;
+  }
+  const authB64 = process.env.WA_AUTH_STATE;
+  if (!authB64) {
+    console.log("[AUTH] No existing session - will show QR code");
+    return;
+  }
+  console.log("[AUTH] Restoring session from WA_AUTH_STATE env var...");
+  fs.writeFileSync("/tmp/auth.tar.gz.b64", authB64);
+  execSync("base64 -d /tmp/auth.tar.gz.b64 > /tmp/auth.tar.gz");
+  execSync(`mkdir -p ${AUTH_STORE}`);
+  execSync(`tar xzf /tmp/auth.tar.gz -C . --no-same-owner`);
+  console.log("[AUTH] Session restored!");
+}
+
+restoreAuthFromEnv();
 
 const logger = pino({ level: "warn" });
 
