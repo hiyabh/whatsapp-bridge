@@ -1,8 +1,5 @@
 node_modules/
 dist/
 .env
-auth_store/pre-key-*
-auth_store/session-*
-auth_store/app-state-sync-version-*
 auth.tar.gz
 auth.b64
