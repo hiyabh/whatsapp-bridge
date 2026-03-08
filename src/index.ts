@@ -1,6 +1,7 @@
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
+  fetchLatestBaileysVersion,
   WASocket,
   proto,
 } from "@whiskeysockets/baileys";
@@ -85,10 +86,13 @@ function extractText(
 // --- WhatsApp Connection ---
 async function connectWhatsApp(): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_STORE);
+  const { version } = await fetchLatestBaileysVersion();
+  console.log(`[INIT] Using WA version: ${version.join(".")}`);
 
   sock = makeWASocket({
     auth: state,
-    printQRInTerminal: false, // We handle QR manually
+    version,
+    printQRInTerminal: true,
     logger,
     markOnlineOnConnect: false,
     syncFullHistory: false,
