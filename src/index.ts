@@ -58,6 +58,8 @@ let processingQueue = false;
 
 // Track message IDs sent by the bot to avoid infinite loops
 const botSentIds = new Set<string>();
+// Track processed incoming message IDs to avoid duplicates
+const processedMsgIds = new Set<string>();
 const MAX_TRACKED_IDS = 500;
 
 function addJitter(baseMs: number): number {
@@ -184,6 +186,16 @@ async function connectWhatsApp(): Promise<void> {
       if (msg.key.id && botSentIds.has(msg.key.id)) {
         botSentIds.delete(msg.key.id);
         continue;
+      }
+
+      // Deduplicate: skip messages we've already processed
+      if (msg.key.id) {
+        if (processedMsgIds.has(msg.key.id)) continue;
+        processedMsgIds.add(msg.key.id);
+        if (processedMsgIds.size > MAX_TRACKED_IDS) {
+          const first = processedMsgIds.values().next().value;
+          if (first) processedMsgIds.delete(first);
+        }
       }
 
       const jid = msg.key.remoteJid;
